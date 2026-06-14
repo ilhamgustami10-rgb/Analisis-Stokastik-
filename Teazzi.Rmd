@@ -1,0 +1,202 @@
+---
+title: "PROSTOK"
+author: "Muhammad Ilham Gustami"
+date: "2025-11-29"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r}
+# Load libraries
+library(readxl)
+library(ggplot2)
+library(dplyr)
+library(gridExtra)
+
+# Load data
+file_path <- "Spreadsheet_Antrian Teazzi.xlsx"
+df <- read_excel(file_path)
+
+# Fungsi untuk identifikasi dan hapus outlier menggunakan IQR
+remove_outliers_iqr <- function(data, column_name) {
+  Q1 <- quantile(data[[column_name]], 0.25, na.rm = TRUE)
+  Q3 <- quantile(data[[column_name]], 0.75, na.rm = TRUE)
+  IQR <- Q3 - Q1
+  lower_bound <- Q1 - 1.5 * IQR
+  upper_bound <- Q3 + 1.5 * IQR
+  
+  # Hapus baris yang mengandung outlier
+  data_clean <- data[data[[column_name]] >= lower_bound & data[[column_name]] <= upper_bound, ]
+  
+  return(list(
+    data_clean = data_clean,
+    lower_bound = lower_bound,
+    upper_bound = upper_bound,
+    outliers_removed = nrow(data) - nrow(data_clean)
+  ))
+}
+
+# Hapus outlier untuk LAMA WAKTU PELAYANAN
+result_service <- remove_outliers_iqr(df, 'LAMA WAKTU PELAYANAN(DETIK)')
+df_clean_service <- result_service$data_clean
+
+# Hapus outlier untuk WAKTU ANTAR KEDATANGAN dari data yang sudah dibersihkan sebelumnya
+result_arrival <- remove_outliers_iqr(df_clean_service, 'WAKTU ANTAR KEDATANGAN(DETIK)')
+df_final_clean <- result_arrival$data_clean
+
+cat("=== INFORMASI PEMBERSIHAN OUTLIER ===\n")
+cat("Data awal:", nrow(df), "baris\n")
+cat("Outlier LAMA WAKTU PELAYANAN yang dihapus:", result_service$outliers_removed, "baris\n")
+cat("Outlier WAKTU ANTAR KEDATANGAN yang dihapus:", result_arrival$outliers_removed, "baris\n")
+cat("Data akhir setelah cleaning:", nrow(df_final_clean), "baris\n")
+cat("Total baris yang dihapus:", nrow(df) - nrow(df_final_clean), "baris\n")
+
+# Data bersih untuk plotting
+service_time_clean <- df_final_clean$`LAMA WAKTU PELAYANAN(DETIK)`
+arrival_interval_clean <- df_final_clean$`WAKTU ANTAR KEDATANGAN(DETIK)`
+
+# Hitung density untuk menentukan posisi teks
+density_service <- density(service_time_clean)
+density_arrival <- density(arrival_interval_clean)
+
+# PLOT 1: LAMA WAKTU PELAYANAN - Setelah Cleaning
+p1_service <- ggplot(data = df_final_clean, aes(x = `LAMA WAKTU PELAYANAN(DETIK)`)) +
+  geom_histogram(aes(y = ..density..), 
+                 bins = 20, 
+                 fill = "lightblue", 
+                 color = "black", 
+                 alpha = 0.8) +
+  stat_function(fun = dnorm, 
+                args = list(mean = mean(service_time_clean), sd = sd(service_time_clean)),
+                color = "red", size = 1.2, linetype = "solid") +
+  labs(title = "Histogram LAMA WAKTU PELAYANAN\n(Setelah Cleaning)",
+       x = "LAMA WAKTU PELAYANAN (detik)", y = "Density") +
+  theme_classic() +
+  theme(
+    plot.title = element_text(hjust = 0.5, size = 14, face = "bold"),
+    axis.title = element_text(size = 12),
+    axis.text = element_text(size = 10)
+  ) +
+  annotate("text", 
+           x = max(service_time_clean) * 0.6, 
+           y = max(density_service$y) * 0.8,
+           label = paste("Mean =", round(mean(service_time_clean), 2), "\n",
+                        "Std. Dev =", round(sd(service_time_clean), 2)),
+           size = 4, hjust = 0, fontface = "bold")
+
+print(p1_service)
+
+# PLOT 2: WAKTU ANTAR KEDATANGAN - Setelah Cleaning
+p1_arrival <- ggplot(data = df_final_clean, aes(x = `WAKTU ANTAR KEDATANGAN(DETIK)`)) +
+  geom_histogram(aes(y = ..density..), 
+                 bins = 20, 
+                 fill = "lightgreen", 
+                 color = "black", 
+                 alpha = 0.8) +
+  stat_function(fun = dnorm, 
+                args = list(mean = mean(arrival_interval_clean), sd = sd(arrival_interval_clean)),
+                color = "red", size = 1.2, linetype = "solid") +
+  labs(title = "Histogram WAKTU ANTAR KEDATANGAN\n(Setelah Cleaning)",
+       x = "WAKTU ANTAR KEDATANGAN (detik)", y = "Density") +
+  theme_classic() +
+  theme(
+    plot.title = element_text(hjust = 0.5, size = 14, face = "bold"),
+    axis.title = element_text(size = 12),
+    axis.text = element_text(size = 10)
+  ) +
+  annotate("text", 
+           x = max(arrival_interval_clean) * 0.6, 
+           y = max(density_arrival$y) * 0.8,
+           label = paste("Mean =", round(mean(arrival_interval_clean), 2), "\n",
+                        "Std. Dev =", round(sd(arrival_interval_clean), 2)),
+           size = 4, hjust = 0, fontface = "bold")
+
+print(p1_arrival)
+
+# PLOT 3: Perbandingan Sebelum vs Sesudah - LAMA WAKTU PELAYANAN
+p2_service <- ggplot() +
+  geom_histogram(data = df, aes(x = `LAMA WAKTU PELAYANAN(DETIK)`, y = ..density.., fill = "Sebelum"), 
+                 bins = 25, alpha = 0.6, color = "black") +
+  geom_histogram(data = df_final_clean, aes(x = `LAMA WAKTU PELAYANAN(DETIK)`, y = ..density.., fill = "Sesudah"), 
+                 bins = 25, alpha = 0.6, color = "black") +
+  labs(title = "Perbandingan Distribusi LAMA WAKTU PELAYANAN\n(Sebelum vs Sesudah Cleaning)",
+       x = "LAMA WAKTU PELAYANAN (detik)", y = "Density") +
+  scale_fill_manual(values = c("Sebelum" = "red", "Sesudah" = "blue")) +
+  theme_minimal() +
+  theme(legend.title = element_blank(),
+        plot.title = element_text(hjust = 0.5, size = 12))
+
+# PLOT 4: Perbandingan Sebelum vs Sesudah - WAKTU ANTAR KEDATANGAN
+p2_arrival <- ggplot() +
+  geom_histogram(data = df, aes(x = `WAKTU ANTAR KEDATANGAN(DETIK)`, y = ..density.., fill = "Sebelum"), 
+                 bins = 25, alpha = 0.6, color = "black") +
+  geom_histogram(data = df_final_clean, aes(x = `WAKTU ANTAR KEDATANGAN(DETIK)`, y = ..density.., fill = "Sesudah"), 
+                 bins = 25, alpha = 0.6, color = "black") +
+  labs(title = "Perbandingan Distribusi WAKTU ANTAR KEDATANGAN\n(Sebelum vs Sesudah Cleaning)",
+       x = "WAKTU ANTAR KEDATANGAN (detik)", y = "Density") +
+  scale_fill_manual(values = c("Sebelum" = "red", "Sesudah" = "blue")) +
+  theme_minimal() +
+  theme(legend.title = element_blank(),
+        plot.title = element_text(hjust = 0.5, size = 12))
+
+# BAR CHART: Perbandingan Statistik
+stats_comparison <- data.frame(
+  Variabel = rep(c("LAMA WAKTU PELAYANAN", "WAKTU ANTAR KEDATANGAN"), each = 2),
+  Kondisi = rep(c("Sebelum", "Sesudah"), 2),
+  Mean = c(
+    mean(df$`LAMA WAKTU PELAYANAN(DETIK)`, na.rm = TRUE),
+    mean(service_time_clean, na.rm = TRUE),
+    mean(df$`WAKTU ANTAR KEDATANGAN(DETIK)`, na.rm = TRUE),
+    mean(arrival_interval_clean, na.rm = TRUE)
+  ),
+  Std_Dev = c(
+    sd(df$`LAMA WAKTU PELAYANAN(DETIK)`, na.rm = TRUE),
+    sd(service_time_clean, na.rm = TRUE),
+    sd(df$`WAKTU ANTAR KEDATANGAN(DETIK)`, na.rm = TRUE),
+    sd(arrival_interval_clean, na.rm = TRUE)
+  )
+)
+
+# Bar chart untuk Mean
+p3_mean <- ggplot(stats_comparison, aes(x = Variabel, y = Mean, fill = Kondisi)) +
+  geom_bar(stat = "identity", position = "dodge", alpha = 0.8) +
+  labs(title = "Perbandingan Mean Sebelum dan Sesudah Cleaning",
+       x = "", y = "Mean (detik)") +
+  scale_fill_manual(values = c("Sebelum" = "red", "Sesudah" = "blue")) +
+  theme_minimal() +
+  theme(legend.position = "bottom",
+        plot.title = element_text(hjust = 0.5, size = 12))
+
+# Bar chart untuk Std Dev
+p3_std <- ggplot(stats_comparison, aes(x = Variabel, y = Std_Dev, fill = Kondisi)) +
+  geom_bar(stat = "identity", position = "dodge", alpha = 0.8) +
+  labs(title = "Perbandingan Standard Deviation Sebelum dan Sesudah Cleaning",
+       x = "", y = "Standard Deviation (detik)") +
+  scale_fill_manual(values = c("Sebelum" = "red", "Sesudah" = "blue")) +
+  theme_minimal() +
+  theme(legend.position = "bottom",
+        plot.title = element_text(hjust = 0.5, size = 12))
+
+# Tampilkan semua plot
+grid.arrange(p1_service, p1_arrival, p2_service, p2_arrival, p3_mean, p3_std, 
+             ncol = 2, nrow = 3)
+
+# Tampilkan statistik
+cat("\n=== STATISTIK SETELAH CLEANING ===\n")
+cat("LAMA WAKTU PELAYANAN:\n")
+cat("  Mean:", round(mean(service_time_clean), 2), "\n")
+cat("  Std. Dev:", round(sd(service_time_clean), 2), "\n")
+cat("  Min:", round(min(service_time_clean), 2), "\n")
+cat("  Max:", round(max(service_time_clean), 2), "\n")
+
+cat("\nWAKTU ANTAR KEDATANGAN:\n")
+cat("  Mean:", round(mean(arrival_interval_clean), 2), "\n")
+cat("  Std. Dev:", round(sd(arrival_interval_clean), 2),
+```
+
+
+```{r}
